@@ -1,0 +1,8 @@
+{
+  "name": "Monochrome Portfolio Studio",
+  "description": "Minimalist, editorial black-and-white personal portfolio with integrated AI studio and project showcase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
