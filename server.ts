@@ -50,15 +50,22 @@ async function startServer() {
 
   app.post('/api/chat', async (req, res) => {
     try {
-      const { message, history = [], mode = 'general', rolePersona = 'recruiter' } = req.body;
+      const {
+        message,
+        history = [],
+        mode = 'general',
+        rolePersona = 'recruiter',
+        useSearchGrounding = false
+      } = req.body;
 
       if (!message || typeof message !== 'string' || !message.trim()) {
         res.status(400).json({ error: 'Message is required.' });
         return;
       }
 
-      const selectedModel =
-        mode === 'fast'
+      const selectedModel = useSearchGrounding
+        ? 'gemini-3.8-flash'
+        : mode === 'fast'
           ? 'gemini-3.1-flash-lite'
           : mode === 'complex'
             ? 'gemini-4-argon'
@@ -86,15 +93,21 @@ async function startServer() {
             }))
         : [];
 
+      const chatConfig: Record<string, unknown> = {
+        systemInstruction: PORTFOLIO_SYSTEM_INSTRUCTION + roleAddendum
+      };
+
+      if (useSearchGrounding) {
+        chatConfig.tools = [{ googleSearch: {} }];
+      }
+
       let response: GenerateContentResponse;
       let actualModelUsed = selectedModel;
       try {
         const chat = ai.chats.create({
           model: selectedModel,
           history: formattedHistory,
-          config: {
-            systemInstruction: PORTFOLIO_SYSTEM_INSTRUCTION + roleAddendum
-          }
+          config: chatConfig
         });
 
         response = await chat.sendMessage({
@@ -106,9 +119,7 @@ async function startServer() {
           const fallbackChat = ai.chats.create({
             model: 'gemini-3.8-flash',
             history: formattedHistory,
-            config: {
-              systemInstruction: PORTFOLIO_SYSTEM_INSTRUCTION + roleAddendum
-            }
+            config: chatConfig
           });
           response = await fallbackChat.sendMessage({
             message: message.trim()
@@ -118,14 +129,76 @@ async function startServer() {
         }
       }
 
+      const rawChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const sources: Array<{ title: string; uri: string }> = [];
+      const seenUris = new Set<string>();
+      for (const chunk of rawChunks) {
+        const uri = chunk?.web?.uri?.trim();
+        if (uri && !seenUris.has(uri)) {
+          seenUris.add(uri);
+          sources.push({
+            title: chunk?.web?.title?.trim() || uri,
+            uri
+          });
+        }
+      }
+
       const replyText = response.text || 'No response generated.';
       res.json({
         reply: replyText,
-        modelUsed: actualModelUsed
+        modelUsed: actualModelUsed,
+        sources
       });
     } catch (error: unknown) {
       const errMessage =
         error instanceof Error ? error.message : 'Failed to communicate with Gemini API.';
+      res.status(500).json({
+        error: errMessage
+      });
+    }
+  });
+
+  app.post('/api/search-grounding', async (req, res) => {
+    try {
+      const { query } = req.body;
+      if (!query || typeof query !== 'string' || !query.trim()) {
+        res.status(400).json({ error: 'Search query is required.' });
+        return;
+      }
+
+      const ai = getGenAIClient();
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: query.trim(),
+        config: {
+          systemInstruction:
+            'You are a technical DevOps and Cloud Engineering research assistant for Bingi Karthik. Provide accurate, up-to-date technical guidance grounded in live Google Search results, and relate it practically to Linux, Git, AWS, or GitHub Actions.',
+          tools: [{ googleSearch: {} }]
+        }
+      });
+
+      const rawChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const sources: Array<{ title: string; uri: string }> = [];
+      const seenUris = new Set<string>();
+      for (const chunk of rawChunks) {
+        const uri = chunk?.web?.uri?.trim();
+        if (uri && !seenUris.has(uri)) {
+          seenUris.add(uri);
+          sources.push({
+            title: chunk?.web?.title?.trim() || uri,
+            uri
+          });
+        }
+      }
+
+      res.json({
+        answer: response.text || 'No grounded summary returned.',
+        modelUsed: 'gemini-3.8-flash',
+        sources
+      });
+    } catch (error: unknown) {
+      const errMessage =
+        error instanceof Error ? error.message : 'Failed to run Google Search grounding.';
       res.status(500).json({
         error: errMessage
       });

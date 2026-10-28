@@ -177,6 +177,29 @@ export function validateImageRequest(
   };
 }
 
+export interface GroundingSource {
+  title: string;
+  uri: string;
+}
+
+export function extractSearchGroundingSources(
+  groundingChunks: Array<{ web?: { uri?: string; title?: string } }> | undefined | null
+): GroundingSource[] {
+  if (!Array.isArray(groundingChunks)) return [];
+  const seen = new Set<string>();
+  const sources: GroundingSource[] = [];
+
+  for (const chunk of groundingChunks) {
+    const uri = chunk?.web?.uri?.trim();
+    if (!uri || seen.has(uri)) continue;
+    seen.add(uri);
+    const title = chunk?.web?.title?.trim() || uri;
+    sources.push({ title, uri });
+  }
+
+  return sources;
+}
+
 export function generatePlainTextResume(): string {
   const lines: string[] = [
     `${PORTFOLIO_PROFILE.displayName}`,

@@ -6,7 +6,8 @@ import {
   validateContactForm,
   resolveChatModel,
   validateImageRequest,
-  generatePlainTextResume
+  generatePlainTextResume,
+  extractSearchGroundingSources
 } from './portfolioLogic';
 import { SKILLS_DATA, ROADMAP_PHASES } from '../data/portfolioData';
 
@@ -102,4 +103,18 @@ test('generatePlainTextResume includes verified contact, education, and transpar
   assert.ok(resumeText.includes('MLR Institute of Technology and Management'));
   assert.ok(resumeText.includes('7.8 / 10.0'));
   assert.ok(resumeText.includes('Suraram, Hyderabad'));
+});
+
+test('extractSearchGroundingSources extracts and deduplicates web grounding chunks', () => {
+  const chunks = [
+    { web: { uri: 'https://docs.github.com/en/actions', title: 'GitHub Actions Documentation' } },
+    { web: { uri: 'https://docs.github.com/en/actions', title: 'Duplicate Entry' } },
+    { web: { uri: 'https://aws.amazon.com/ec2/', title: 'Amazon EC2' } },
+    {}
+  ];
+  const sources = extractSearchGroundingSources(chunks);
+  assert.equal(sources.length, 2);
+  assert.equal(sources[0].uri, 'https://docs.github.com/en/actions');
+  assert.equal(sources[0].title, 'GitHub Actions Documentation');
+  assert.equal(sources[1].uri, 'https://aws.amazon.com/ec2/');
 });
